@@ -25,10 +25,14 @@ export class ApiError extends Error {
 }
 
 export function getAccessToken(): string | null {
+  if (typeof localStorage === 'undefined') return null
+
   return localStorage.getItem(TOKEN_KEY)
 }
 
 export function putAccessToken(token: string | null): void {
+  if (typeof localStorage === 'undefined') return
+
   if (token) {
     localStorage.setItem(TOKEN_KEY, token)
   } else {
@@ -37,33 +41,80 @@ export function putAccessToken(token: string | null): void {
 }
 
 export function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Terjadi kesalahan tak terduga'
+  return error instanceof Error
+    ? error.message
+    : 'Terjadi kesalahan tak terduga'
 }
 
-function buildUrl(path: string, query?: RequestOptions['query']): string {
-  const params = new URLSearchParams()
+function buildUrl(
+  path: string,
+  query?: RequestOptions['query'],
+): string {
+  const baseURL = DELCOM_BASEURL.replace(/\/+$/, '')
+  const normalizedPath = path.replace(/^\/+/, '')
+  const url = new URL(`${baseURL}/${normalizedPath}`)
+
   Object.entries(query ?? {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') params.append(key, String(value))
+    if (value !== undefined && value !== null && value !== '') {
+      url.searchParams.set(key, String(value))
+    }
   })
-  const qs = params.toString()
-  return `${DELCOM_BASEURL}${path}${qs ? `?${qs}` : ''}`
+
+  return url.toString()
 }
 
-function extractMessage(json: ApiResponse<unknown> | null): string {
+function extractMessage(
+  json: ApiResponse<unknown> | null,
+): string {
   if (!json) return 'Respon server tidak valid'
-  const details = json.data && typeof json.data === 'object' ? Object.values(json.data).flat().join(', ') : ''
-  if (details) return `${json.message}: ${details}`
+
+  const data = json.data
+
+  if (data && typeof data === 'object') {
+    const details = Object.values(data)
+      .flatMap((value) => Array.isArray(value) ? value : [value])
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' && value.length > 0,
+      )
+      .join(', ')
+
+    if (details) {
+      return `${json.message || 'Permintaan gagal'}: ${details}`
+    }
+  }
+
   return json.message || 'Permintaan gagal diproses'
 }
 
-/** Wrapper fetch REST API dengan header Bearer Token terstandarisasi dan error handling. */
-export async function apiRequest<T = unknown>(path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
-  const { method = 'GET', body, formData, query, auth = true } = options
-  const headers: Record<string, string> = { Accept: 'application/json' }
-  const token = getAccessToken()
-  if (auth && token) headers.Authorization = `Bearer ${token}`
+/**
+ * Wrapper fetch API Delcom.
+ * Menangani query, JSON, FormData, token Bearer, dan error.
+ */
+export async function apiRequest<T = unknown>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<ApiResponse<T>> {
+  const {
+    method = 'GET',
+    body,
+    formData,
+    query,
+    auth = true,
+  } = options
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  }
+
+  const token = auth ? getAccessToken() : null
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
 
   let payload: BodyInit | undefined
+
   if (formData) {
     payload = formData
   } else if (body !== undefined) {
@@ -72,15 +123,24 @@ export async function apiRequest<T = unknown>(path: string, options: RequestOpti
   }
 
   let response: Response
+
   try {
-    response = await fetch(buildUrl(path, query), { method, headers, body: payload })
+    response = await fetch(buildUrl(path, query), {
+      method,
+      headers,
+      body: payload,
+    })
   } catch {
     throw new ApiError('Tidak dapat terhubung ke server')
   }
 
-  const json = (await response.json().catch(() => null)) as ApiResponse<T> | null
+  const json = (
+    await response.json().catch(() => null)
+  ) as ApiResponse<T> | null
+
   if (!response.ok || !json || json.status !== 'success') {
     throw new ApiError(extractMessage(json), json?.data)
   }
+
   return json
 }

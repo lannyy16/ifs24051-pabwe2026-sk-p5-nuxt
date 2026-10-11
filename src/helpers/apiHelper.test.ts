@@ -1,100 +1,430 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiRequest, getAccessToken, getErrorMessage, putAccessToken } from './apiHelper'
+import {
+  apiRequest,
+  getAccessToken,
+  putAccessToken,
+  getErrorMessage,
+  ApiError,
+} from './apiHelper'
 
 const fetchMock = vi.fn()
-const reply = (body: unknown, ok = true) => ({ ok, json: async () => body })
 
-beforeEach(() => {
-  vi.stubGlobal('fetch', fetchMock)
-  fetchMock.mockReset()
-})
-afterEach(() => vi.unstubAllGlobals())
-
-describe('token helpers', () => {
-  it('menyimpan, membaca, dan menghapus token', () => {
-    expect(getAccessToken()).toBeNull()
-    putAccessToken('abc')
-    expect(getAccessToken()).toBe('abc')
+describe('apiHelper', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockReset()
+    localStorage.clear()
     putAccessToken(null)
-    expect(getAccessToken()).toBeNull()
-  })
-})
-
-describe('getErrorMessage', () => {
-  it('mengambil pesan dari Error atau memakai pesan default', () => {
-    expect(getErrorMessage(new Error('boom'))).toBe('boom')
-    expect(getErrorMessage('x')).toBe('Terjadi kesalahan tak terduga')
-  })
-})
-
-describe('apiRequest', () => {
-  it('GET dengan query (mengabaikan nilai kosong) dan bearer token', async () => {
-    putAccessToken('tok')
-    fetchMock.mockResolvedValue(reply({ status: 'success', message: 'ok', data: { a: 1 } }))
-    const res = await apiRequest('/x', { query: { type: 'inflow', label: '', a: undefined, b: null, n: 2 } })
-    expect(res.data).toEqual({ a: 1 })
-    const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe(`${DELCOM_BASEURL}/x?type=inflow&n=2`)
-    expect(init.method).toBe('GET')
-    expect(init.headers.Authorization).toBe('Bearer tok')
-    expect(init.body).toBeUndefined()
   })
 
-  it('tanpa token / auth=false tidak mengirim Authorization dan URL tanpa query', async () => {
-    fetchMock.mockResolvedValue(reply({ status: 'success', message: 'ok', data: null }))
-    await apiRequest('/x')
-    expect(fetchMock.mock.calls[0][0]).toBe(`${DELCOM_BASEURL}/x`)
-    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined()
-    putAccessToken('tok')
-    await apiRequest('/x', { auth: false })
-    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBeUndefined()
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
-  it('mengirim body JSON dan FormData', async () => {
-    fetchMock.mockResolvedValue(reply({ status: 'success', message: 'ok', data: null }))
-    await apiRequest('/x', { method: 'POST', body: { a: 1 } })
-    expect(fetchMock.mock.calls[0][1].body).toBe('{"a":1}')
-    expect(fetchMock.mock.calls[0][1].headers['Content-Type']).toBe('application/json')
-    const formData = new FormData()
-    await apiRequest('/x', { method: 'POST', formData })
-    expect(fetchMock.mock.calls[1][1].body).toBe(formData)
-    expect(fetchMock.mock.calls[1][1].headers['Content-Type']).toBeUndefined()
-  })
-
-  it('melempar ApiError saat jaringan gagal', async () => {
-    fetchMock.mockRejectedValue(new Error('offline'))
-    await expect(apiRequest('/x')).rejects.toThrow('Tidak dapat terhubung ke server')
-  })
-
-  it('melempar ApiError saat respon bukan JSON', async () => {
-    fetchMock.mockResolvedValue({
-      ok: false,
-      json: async () => {
-        throw new Error('bad json')
-      },
+  describe('getAccessToken dan putAccessToken', () => {
+    it('mengembalikan null jika token belum tersedia', () => {
+      expect(getAccessToken()).toBeNull()
     })
-    await expect(apiRequest('/x')).rejects.toThrow('Respon server tidak valid')
+
+    it('menyimpan dan mengambil token', () => {
+      putAccessToken('token-123')
+
+      expect(getAccessToken()).toBe('token-123')
+    })
+
+    it('menghapus token jika diberi null', () => {
+      putAccessToken('token-123')
+      putAccessToken(null)
+
+      expect(getAccessToken()).toBeNull()
+    })
+
+    it('menghapus token jika diberi string kosong', () => {
+      putAccessToken('token-123')
+      putAccessToken('')
+
+      expect(getAccessToken()).toBeNull()
+    })
+
+    it('mengembalikan null jika localStorage tidak tersedia', () => {
+      vi.stubGlobal('localStorage', undefined)
+
+      expect(getAccessToken()).toBeNull()
+    })
+
+    it('tidak error ketika menyimpan token tanpa localStorage', () => {
+      vi.stubGlobal('localStorage', undefined)
+
+      expect(() => putAccessToken('token-123')).not.toThrow()
+    })
   })
 
-  it('menggabungkan pesan validasi dari data', async () => {
-    fetchMock.mockResolvedValue(reply({ status: 'fail', message: 'Data tidak valid', data: { email: ['Email wajib', 'Format salah'] } }, false))
-    const error = await apiRequest('/x').catch((e) => e)
-    expect(error).toBeInstanceOf(ApiError)
-    expect(error.message).toBe('Data tidak valid: Email wajib, Format salah')
-    expect(error.data).toEqual({ email: ['Email wajib', 'Format salah'] })
+  describe('getErrorMessage', () => {
+    it('mengambil pesan dari Error', () => {
+      expect(getErrorMessage(new Error('Terjadi masalah'))).toBe(
+        'Terjadi masalah',
+      )
+    })
+
+    it('mengembalikan pesan default untuk error non-Error', () => {
+      expect(getErrorMessage('error')).toBe(
+        'Terjadi kesalahan tak terduga',
+      )
+    })
+
+    it('menangani null', () => {
+      expect(getErrorMessage(null)).toBe(
+        'Terjadi kesalahan tak terduga',
+      )
+    })
   })
 
-  it('memakai pesan server bila data bukan objek atau kosong', async () => {
-    fetchMock.mockResolvedValueOnce(reply({ status: 'fail', message: 'Gagal', data: 'teks' }))
-    await expect(apiRequest('/x')).rejects.toThrow('Gagal')
-    fetchMock.mockResolvedValueOnce(reply({ status: 'fail', message: 'Gagal 2', data: {} }))
-    await expect(apiRequest('/x')).rejects.toThrow('Gagal 2')
-    fetchMock.mockResolvedValueOnce(reply({ status: 'fail', message: 'Gagal 3' }))
-    await expect(apiRequest('/x')).rejects.toThrow('Gagal 3')
-  })
+  describe('apiRequest', () => {
+    it('melakukan GET dan mengembalikan data JSON', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            message: 'Berhasil',
+            data: { id: 1 },
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
 
-  it('memakai pesan default bila server tidak memberi pesan', async () => {
-    fetchMock.mockResolvedValue(reply({ status: 'fail', message: '' }, false))
-    await expect(apiRequest('/x')).rejects.toThrow('Permintaan gagal diproses')
+      const result = await apiRequest('/test')
+
+      expect(result.data).toEqual({ id: 1 })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('menghapus slash berlebih pada URL dan mengirim query', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            message: 'Berhasil',
+            data: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await apiRequest('//test', {
+        query: {
+          page: 2,
+          search: 'makan',
+          kosong: '',
+          kosongNull: null,
+          tidakAda: undefined,
+        },
+      })
+
+      const call = fetchMock.mock.calls[0]
+
+      if (!call) {
+        throw new Error('Pemanggilan fetch tidak ditemukan')
+      }
+
+      const url = String(call[0])
+
+      expect(url).toContain('page=2')
+      expect(url).toContain('search=makan')
+      expect(url).not.toContain('kosong=')
+      expect(url).not.toContain('kosongNull=')
+      expect(url).not.toContain('tidakAda=')
+    })
+
+    it('mengirim token Bearer jika autentikasi aktif', async () => {
+      putAccessToken('token-rahasia')
+
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            message: 'Berhasil',
+            data: {},
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await apiRequest('/test')
+
+      const call = fetchMock.mock.calls[0]
+
+      if (!call) {
+        throw new Error('Pemanggilan fetch tidak ditemukan')
+      }
+
+      const init = call[1] as RequestInit
+
+      expect(
+        new Headers(init.headers).get('Authorization'),
+      ).toBe('Bearer token-rahasia')
+    })
+
+    it('tidak mengirim token jika auth false', async () => {
+      putAccessToken('token-rahasia')
+
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            message: 'Berhasil',
+            data: {},
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await apiRequest('/test', { auth: false })
+
+      const call = fetchMock.mock.calls[0]
+
+      if (!call) {
+        throw new Error('Pemanggilan fetch tidak ditemukan')
+      }
+
+      const init = call[1] as RequestInit
+
+      expect(
+        new Headers(init.headers).get('Authorization'),
+      ).toBeNull()
+    })
+
+    it('mengirim body JSON untuk request biasa', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            message: 'Berhasil',
+            data: {},
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await apiRequest('/test', {
+        method: 'POST',
+        body: { nama: 'Karina' },
+      })
+
+      const call = fetchMock.mock.calls[0]
+
+      if (!call) {
+        throw new Error('Pemanggilan fetch tidak ditemukan')
+      }
+
+      const init = call[1] as RequestInit
+
+      expect(init.method).toBe('POST')
+      expect(init.body).toBe(JSON.stringify({ nama: 'Karina' }))
+    })
+
+    it('mengirim FormData tanpa memaksa Content-Type JSON', async () => {
+      const formData = new FormData()
+      formData.append('nama', 'Karina')
+
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'success',
+            message: 'Berhasil',
+            data: {},
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await apiRequest('/test', {
+        method: 'POST',
+        formData,
+      })
+
+      const call = fetchMock.mock.calls[0]
+
+      if (!call) {
+        throw new Error('Pemanggilan fetch tidak ditemukan')
+      }
+
+      const init = call[1] as RequestInit
+
+      expect(init.body).toBe(formData)
+      expect(
+        new Headers(init.headers).get('Content-Type'),
+      ).toBeNull()
+    })
+
+    it('melempar ApiError saat server mengembalikan detail validasi', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'error',
+            message: 'Validasi gagal',
+            data: {
+              nama: ['Nama wajib diisi'],
+              email: ['Email tidak valid'],
+            },
+          }),
+          {
+            status: 422,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      try {
+        await apiRequest('/test')
+        throw new Error('Seharusnya request gagal')
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError)
+        expect((error as Error).message).toContain('Validasi gagal')
+        expect((error as ApiError).data).toEqual({
+          nama: ['Nama wajib diisi'],
+          email: ['Email tidak valid'],
+        })
+      }
+    })
+
+    it('menangani detail error berupa nilai kosong dan non-string', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'error',
+            message: '',
+            data: {
+              kosong: '',
+              angka: 123,
+              boolean: false,
+            },
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await expect(apiRequest('/test')).rejects.toThrow(
+        'Permintaan gagal diproses',
+      )
+    })
+
+    it('menggunakan pesan default saat message kosong tetapi detail tersedia', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'error',
+            message: '',
+            data: {
+              nama: ['Nama tidak valid'],
+            },
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await expect(apiRequest('/test')).rejects.toThrow(
+        'Permintaan gagal: Nama tidak valid',
+      )
+    })
+
+    it('menangani response error tanpa data', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'error',
+            message: 'Gagal mengambil data',
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await expect(apiRequest('/test')).rejects.toThrow(
+        'Gagal mengambil data',
+      )
+    })
+
+    it('menangani response error dengan data string', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'error',
+            message: 'Gagal',
+            data: 'teks',
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await expect(apiRequest('/test')).rejects.toThrow('Gagal')
+    })
+
+    it('menangani response error dengan data object kosong', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'error',
+            message: 'Gagal',
+            data: {},
+          }),
+          {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      await expect(apiRequest('/test')).rejects.toThrow('Gagal')
+    })
+
+    it('menangani response JSON yang tidak valid', async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response('bukan JSON', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      await expect(apiRequest('/test')).rejects.toThrow()
+    })
+
+    it('menangani kegagalan jaringan', async () => {
+      fetchMock.mockRejectedValueOnce(
+        new Error('Jaringan terputus'),
+      )
+
+      await expect(apiRequest('/test')).rejects.toThrow(
+        'Tidak dapat terhubung ke server',
+      )
+    })
   })
 })

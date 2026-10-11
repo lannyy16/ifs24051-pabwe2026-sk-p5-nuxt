@@ -1,21 +1,25 @@
+
 import { reactive, toRef } from 'vue'
-import type { Ref } from 'vue'
 
-/** Composable untuk two-way binding & pengelolaan state input form. */
-export function useInput<T extends Record<string, unknown>>(initial: T) {
-  const form = reactive({ ...initial }) as T
+export function useInput<T extends Record<string, unknown>>(initialValue: T) {
+  const form = reactive({ ...initialValue }) as T
 
-  function field<K extends keyof T>(key: K): Ref<T[K]> {
-    return toRef(form, key) as Ref<T[K]>
+  function field<K extends keyof T>(key: K) {
+    return toRef(form, key)
   }
 
-  function setForm(values: Partial<T>): void {
+  function setForm(values: Partial<T>) {
     Object.assign(form, values)
   }
 
-  function reset(): void {
-    Object.assign(form, initial)
+  function reset() {
+    Object.assign(form, initialValue)
   }
 
-  return { form, field, setForm, reset }
+  return {
+    form,
+    field,
+    setForm,
+    reset,
+  }
 }
