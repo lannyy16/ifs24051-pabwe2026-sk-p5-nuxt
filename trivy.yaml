@@ -1,0 +1,4 @@
+# Dibaca otomatis oleh `trivy fs` dari root repo (tanpa ubah Jenkinsfile).
+# Abaikan kerentanan yang belum memiliki versi perbaikan upstream.
+vulnerability:
+  ignore-unfixed: true

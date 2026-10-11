@@ -1,0 +1,5 @@
+# Dependensi transitif Nuxt (build-time) yang BELUM punya versi perbaikan upstream.
+# Tidak ikut ke runtime aplikasi SPA (hanya dipakai saat build/dev server).
+# Tinjau ulang tiap upgrade Nuxt.
+GHSA-vfj7-8cjw-p6xm
+GHSA-86w9-cpqp-85rv

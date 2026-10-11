@@ -1,75 +1,25 @@
-# Nuxt Minimal Starter
+# Delcom Cash Flow — Nuxt 4 (TypeScript)
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+Aplikasi pencatatan arus kas berbasis [Delcom Open API](https://open-api.delcom.org/docs/1.0/api-cash-flows).
+Stack: **bun**, **Nuxt 4** (SPA, `ssr: false`), **TypeScript**, **Pinia**, **Tailwind CSS v4**, SweetAlert2, lucide-vue-next, Plus Jakarta Sans, Vitest.
 
-## Setup
-
-Make sure to install dependencies:
-
+## Menjalankan
 ```bash
-# npm
-npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
 bun install
+cp .env.example .env      # VITE_DELCOM_BASEURL dan APP_PORT
+bun run dev               # mode pengembangan
+bun run build && bun run start   # build lalu preview (port dari APP_PORT via start.mjs)
+bun run test:coverage     # unit + integration test, threshold coverage 100%
 ```
 
-## Development Server
+## Struktur utama
+- `src/helpers` — `apiHelper.ts`, `toolsHelper.ts` · `src/hooks/useInput.ts` · `src/env.d.ts`
+- `src/features/auth|users|cashflows|common` — `api/`, `states/` (Pinia), `layouts/`, `components/`, `modals/` (cashflows), `pages/`
+- `src/routes.ts` + `src/router.options.ts` — deklarasi rute · `src/test-utils.ts`, `src/setupTests.ts` — utilitas pengujian
 
-Start the development server on `http://localhost:3000`:
+Catatan: endpoint ubah password memakai `PUT /users/password` sesuai dokumentasi resmi Delcom Open API.
 
-```bash
-# npm
-npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
-```
-
-## Production
-
-Build the application for production:
-
-```bash
-# npm
-npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## Troubleshooting
+- **`Either manifest or precomputed data must be provided` (HTTP 500)** — versi Nuxt dikunci ke `4.5.2` (tanpa `^`) karena Nuxt 4.6.0 menimbulkan error ini di lingkungan Windows. Setelah mengganti `package.json`, hapus `node_modules`, `.nuxt`, dan `bun.lock` lama, lalu jalankan `bun install`.
+- Hindari menaruh proyek di folder yang disinkronkan OneDrive (mis. `Desktop` yang di-sync); sinkronisasi dapat merusak folder `.nuxt`.
+- `bun run start` memakai `start.mjs` (membaca `APP_PORT` dari `.env`) dan butuh `bun run build` terlebih dahulu.
