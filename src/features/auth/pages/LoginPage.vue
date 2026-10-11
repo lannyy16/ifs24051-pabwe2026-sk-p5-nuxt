@@ -15,7 +15,7 @@ async function handleSubmit() {
     return
   }
   await showSuccessDialog(authStore.message)
-  await router.push('/')
+  await router.push('/cashflows')
 }
 </script>
 

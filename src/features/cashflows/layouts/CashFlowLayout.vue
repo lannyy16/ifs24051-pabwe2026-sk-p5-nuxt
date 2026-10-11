@@ -15,26 +15,43 @@ const ready = ref(false)
 const sidebarOpen = ref(false)
 
 onMounted(async () => {
+  ready.value = false
+
   if (!getAccessToken()) {
     await router.replace('/auth/login')
     return
   }
-  const valid = await usersStore.fetchProfile()
-  if (!valid) {
+
+  try {
+    const valid = await usersStore.fetchProfile()
+
+    if (!valid) {
+      authStore.clearSession()
+      await router.replace('/auth/login')
+      return
+    }
+
+    ready.value = true
+  } catch {
     authStore.clearSession()
     await router.replace('/auth/login')
-    return
   }
-  ready.value = true
 })
 </script>
 
 <template>
   <div class="min-h-screen">
-    <NavbarComponent @toggle-sidebar="sidebarOpen = !sidebarOpen" />
-    <SidebarComponent :open="sidebarOpen" @close="sidebarOpen = false" />
-    <main class="px-4 py-6 lg:pl-72 lg:pr-8">
-      <RouterView v-if="ready" />
-    </main>
+    <template v-if="ready">
+      <NavbarComponent @toggle-sidebar="sidebarOpen = !sidebarOpen" />
+
+      <SidebarComponent
+        :open="sidebarOpen"
+        @close="sidebarOpen = false"
+      />
+
+      <main class="px-4 py-6 lg:pl-72 lg:pr-8">
+        <RouterView />
+      </main>
+    </template>
   </div>
 </template>

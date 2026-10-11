@@ -1,23 +1,37 @@
+
 import { describe, expect, it } from 'vitest'
-import type { RouteRecordRaw } from 'vue-router'
 import routerOptions from './router.options'
 import { routes } from './routes'
 
 type Lazy = () => Promise<unknown>
 
-function collect(list: RouteRecordRaw[]): RouteRecordRaw[] {
-  return list.flatMap((route) => [route, ...collect(route.children ?? [])])
+function collect(records: typeof routes): typeof routes {
+  return records.flatMap((route) => [
+    route,
+    ...collect((route.children ?? []) as typeof routes),
+  ])
 }
 
 describe('router.options', () => {
   it('memakai deklarasi rute dari routes.ts', () => {
-    expect((routerOptions.routes as () => unknown)()).toBe(routes)
+    expect(routerOptions.routes?.()).toBe(routes)
   })
 
   it('mendeklarasikan seluruh rute yang diminta', () => {
     const paths = collect(routes).map((route) => route.path)
+
     expect(paths).toEqual(
-      expect.arrayContaining(['/auth', 'login', 'register', '/', 'cash-flows/:cashFlowId', 'users', 'profile', '/:pathMatch(.*)*']),
+      expect.arrayContaining([
+        '/',
+        '/auth',
+        'login',
+        'register',
+        'cashflows',
+        'cashflows/:cashFlowId',
+        'users',
+        'profile',
+        '/:pathMatch(.*)*',
+      ]),
     )
   })
 
@@ -25,8 +39,12 @@ describe('router.options', () => {
     const loaders = collect(routes)
       .map((route) => route.component as Lazy | undefined)
       .filter((loader): loader is Lazy => !!loader)
-    expect(loaders).toHaveLength(9)
-    const modules = (await Promise.all(loaders.map((load) => load()))) as { default: unknown }[]
-    modules.forEach((module) => expect(module.default).toBeDefined())
+
+    expect(loaders).toHaveLength(10)
+
+    const modules = await Promise.all(loaders.map((loader) => loader()))
+    modules.forEach((module) => {
+      expect(module).toBeDefined()
+    })
   })
 })

@@ -33,7 +33,7 @@ async function handleDelete() {
     return
   }
   await showSuccessDialog(store.message)
-  await router.replace('/')
+  await router.replace('/cashflows')
 }
 
 onMounted(async () => {
@@ -43,7 +43,7 @@ onMounted(async () => {
 
 <template>
   <section class="mx-auto max-w-2xl space-y-4">
-    <RouterLink to="/" class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700 hover:underline">
+    <RouterLink to="/cashflows" class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700 hover:underline">
       <ArrowLeft class="h-4 w-4" /> Kembali
     </RouterLink>
 

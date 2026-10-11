@@ -1,54 +1,149 @@
-import { screen, waitFor } from '@testing-library/vue'
-import { defineComponent, h } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getAccessToken, putAccessToken } from '../../../helpers/apiHelper'
-import { renderWithProviders, sampleUser } from '../../../test-utils'
-import { getMeApi } from '../../users/api/userApi'
-import App from '../../../app.vue'
+import { nextTick } from 'vue'
 import CashFlowLayout from './CashFlowLayout.vue'
 
-vi.mock('../../users/api/userApi')
-vi.mock('../../auth/api/authApi')
+const mocks = vi.hoisted(() => ({
+  replace: vi.fn(),
+  fetchProfile: vi.fn(),
+  clearSession: vi.fn(),
+  getAccessToken: vi.fn(),
+}))
 
-const Child = defineComponent({ render: () => h('p', 'Konten Anak') })
-const routes = [{ path: '/', component: CashFlowLayout, children: [{ path: '', component: Child }] }]
+vi.mock('vue-router', () => ({
+  RouterView: {
+    name: 'RouterView',
+    template: '<div data-testid="router-view"></div>',
+  },
+  useRouter: () => ({
+    replace: mocks.replace,
+  }),
+}))
 
-beforeEach(() => vi.resetAllMocks())
+vi.mock('../../../helpers/apiHelper', () => ({
+  getAccessToken: mocks.getAccessToken,
+}))
+
+vi.mock('../../auth/states/authStore', () => ({
+  useAuthStore: () => ({
+    clearSession: mocks.clearSession,
+  }),
+}))
+
+vi.mock('../../users/states/usersStore', () => ({
+  useUsersStore: () => ({
+    fetchProfile: mocks.fetchProfile,
+  }),
+}))
+
+vi.mock('../components/NavbarComponent.vue', () => ({
+  default: {
+    name: 'NavbarComponent',
+    emits: ['toggle-sidebar'],
+    template: `
+      <button
+        data-testid="toggle-sidebar"
+        @click="$emit('toggle-sidebar')"
+      >
+        Toggle Sidebar
+      </button>
+    `,
+  },
+}))
+
+vi.mock('../components/SidebarComponent.vue', () => ({
+  default: {
+    name: 'SidebarComponent',
+    props: ['open'],
+    emits: ['close'],
+    template: `
+      <div data-testid="sidebar">
+        <span data-testid="sidebar-state">{{ open }}</span>
+        <button data-testid="close-sidebar" @click="$emit('close')">
+          Close
+        </button>
+      </div>
+    `,
+  },
+}))
 
 describe('CashFlowLayout', () => {
-  it('mengalihkan ke login bila belum ada token', async () => {
-    const { router } = await renderWithProviders(CashFlowLayout, { route: '/x' })
-    await waitFor(() => expect(router.currentRoute.value.path).toBe('/auth/login'))
-    expect(getMeApi).not.toHaveBeenCalled()
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.getAccessToken.mockReturnValue('test-token')
+    mocks.fetchProfile.mockResolvedValue(true)
+    mocks.replace.mockResolvedValue(undefined)
   })
 
-  it('memuat profil dan menampilkan konten terproteksi', async () => {
-    putAccessToken('tok')
-    vi.mocked(getMeApi).mockResolvedValue({ status: 'success', message: 'ok', data: { user: sampleUser } })
-    await renderWithProviders(App, { route: '/', routes })
-    expect(await screen.findByText('Konten Anak')).toBeInTheDocument()
-    expect(screen.getByText('Delcom Testing')).toBeInTheDocument()
-    expect(screen.getByText('Direktori Pengguna')).toBeInTheDocument()
+  it('mengarahkan ke login jika token tidak tersedia', async () => {
+    mocks.getAccessToken.mockReturnValue(null)
+
+    const wrapper = mount(CashFlowLayout)
+    await flushPromises()
+
+    expect(mocks.replace).toHaveBeenCalledWith('/auth/login')
+    expect(mocks.fetchProfile).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="router-view"]').exists()).toBe(false)
+
+    wrapper.unmount()
   })
 
-  it('membersihkan sesi dan ke login bila token tidak valid', async () => {
-    putAccessToken('bad')
-    vi.mocked(getMeApi).mockRejectedValue(new Error('Unauthenticated'))
-    const { router } = await renderWithProviders(CashFlowLayout, { route: '/x' })
-    await waitFor(() => expect(router.currentRoute.value.path).toBe('/auth/login'))
-    expect(getAccessToken()).toBeNull()
-    expect(screen.queryByText('Konten Anak')).not.toBeInTheDocument()
+  it('menampilkan layout jika profil valid', async () => {
+    const wrapper = mount(CashFlowLayout)
+    await flushPromises()
+
+    expect(mocks.fetchProfile).toHaveBeenCalledOnce()
+    expect(wrapper.find('[data-testid="router-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="toggle-sidebar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="sidebar"]').exists()).toBe(true)
+    expect(mocks.clearSession).not.toHaveBeenCalled()
+    expect(mocks.replace).not.toHaveBeenCalled()
+
+    wrapper.unmount()
   })
 
-  it('membuka dan menutup sidebar dari navbar', async () => {
-    putAccessToken('tok')
-    vi.mocked(getMeApi).mockResolvedValue({ status: 'success', message: 'ok', data: { user: sampleUser } })
-    await renderWithProviders(App, { route: '/', routes })
-    await screen.findByText('Konten Anak')
-    const { fireEvent } = await import('@testing-library/vue')
-    await fireEvent.click(screen.getByLabelText('Buka menu'))
-    expect(screen.getByTestId('sidebar')).toHaveClass('translate-x-0')
-    await fireEvent.click(screen.getByText('Profil Saya'))
-    await waitFor(() => expect(screen.getByTestId('sidebar')).toHaveClass('-translate-x-full'))
+  it('menghapus sesi dan mengarahkan ke login jika profil tidak valid', async () => {
+    mocks.fetchProfile.mockResolvedValue(false)
+
+    const wrapper = mount(CashFlowLayout)
+    await flushPromises()
+
+    expect(mocks.clearSession).toHaveBeenCalledOnce()
+    expect(mocks.replace).toHaveBeenCalledWith('/auth/login')
+    expect(wrapper.find('[data-testid="router-view"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('menghapus sesi dan mengarahkan ke login jika pengambilan profil gagal', async () => {
+    mocks.fetchProfile.mockRejectedValue(new Error('Gagal mengambil profil'))
+
+    const wrapper = mount(CashFlowLayout)
+    await flushPromises()
+
+    expect(mocks.clearSession).toHaveBeenCalledOnce()
+    expect(mocks.replace).toHaveBeenCalledWith('/auth/login')
+    expect(wrapper.find('[data-testid="router-view"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('membuka dan menutup sidebar', async () => {
+    const wrapper = mount(CashFlowLayout)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="sidebar-state"]').text()).toBe('false')
+
+    await wrapper.find('[data-testid="toggle-sidebar"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="sidebar-state"]').text()).toBe('true')
+
+    await wrapper.find('[data-testid="close-sidebar"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="sidebar-state"]').text()).toBe('false')
+
+    wrapper.unmount()
   })
 })
